@@ -6,9 +6,9 @@ using UnityEngine.Audio;
 [RequireComponent(typeof(PlayerCheck))]
 public class Movement : MonoBehaviour
 {
-    #region MovementValues
+    #region MovementValues
 
-    [Header("Movement")]
+    [Header("Movement")]
     [SerializeField] private float walkSpeed = 8f;
     [SerializeField] private float jumpPower = 6f;
     [SerializeField] private float gravity = 18f;
@@ -105,12 +105,13 @@ public class Movement : MonoBehaviour
     private float tiempoEnAire;
     private float maximaVelocidadCaidaAlcanzada;
 
-    #endregion
+    #endregion
 
-    #region References
+    #region References
 
-    [Header("References")]
-    [SerializeField] private PlayerCamera playerCameraScript;
+    [Header("References")]
+    [SerializeField] private Transform mainCameraTransform;
+    [SerializeField] private float rotationSmoothSpeed = 12f;
     [SerializeField] private Transform modeloVisual;
 
     private Transform mirrorPivot;
@@ -122,9 +123,9 @@ public class Movement : MonoBehaviour
 
     public static Movement Instance;
 
-    #endregion
+    #endregion
 
-    private void Awake()
+    private void Awake()
     {
         Instance = this;
 
@@ -145,12 +146,15 @@ public class Movement : MonoBehaviour
 
     private void Start()
     {
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible = false;
+
         characterController = GetComponent<CharacterController>();
         playerCheck = GetComponent<PlayerCheck>();
         jumpsLeft = jumpsMax;
 
-        if (playerCameraScript == null)
-            playerCameraScript = GetComponentInChildren<PlayerCamera>();
+        if (mainCameraTransform == null && Camera.main != null)
+            mainCameraTransform = Camera.main.transform;
 
         if (animator == null)
             animator = GetComponentInChildren<Animator>();
@@ -187,8 +191,7 @@ public class Movement : MonoBehaviour
         {
             escalaOriginalFallback = modeloVisual.localScale;
 
-            // Creamos un pivote limpio sin Animator para que los keyframes de Blockbench no pisen la escala
-            if (animator == null || animator.transform != transform)
+            if (animator == null || animator.transform != transform)
             {
                 GameObject pivotObj = new GameObject("WallRunMirrorPivot");
                 mirrorPivot = pivotObj.transform;
@@ -239,9 +242,6 @@ public class Movement : MonoBehaviour
             isWallRunning = false;
             isWallSliding = false;
 
-            if (playerCameraScript != null)
-                playerCameraScript.SetLockPlayerRotation(false);
-
             if (moveDirection.y < 0f)
                 moveDirection.y = -10f;
         }
@@ -285,16 +285,13 @@ public class Movement : MonoBehaviour
             jumpBufferCounter = 0f;
 
             if (Physics.Raycast(transform.position + Vector3.up * 1.2f, transform.forward, out RaycastHit ledgeHit, 2f) ||
-              Physics.Raycast(transform.position + Vector3.up * 0.5f, transform.forward, out ledgeHit, 2f))
+                Physics.Raycast(transform.position + Vector3.up * 0.5f, transform.forward, out ledgeHit, 2f))
             {
                 transform.rotation = Quaternion.LookRotation(-ledgeHit.normal);
 
                 hangingLedgeTransform = ledgeHit.transform;
                 lastLedgePosition = hangingLedgeTransform.position;
             }
-
-            if (playerCameraScript != null)
-                playerCameraScript.SetLockPlayerRotation(true);
         }
 
         if (isHanging)
@@ -313,9 +310,6 @@ public class Movement : MonoBehaviour
                 moveDirection.x = horizontalVelocity.x;
                 moveDirection.z = horizontalVelocity.z;
                 moveDirection.y = -4f;
-
-                if (playerCameraScript != null)
-                    playerCameraScript.SetLockPlayerRotation(false);
             }
             else if (ledgeGrabTimer <= 0f && (Input.GetButtonDown("Jump") || verticalInput > 0.5f))
             {
@@ -326,9 +320,6 @@ public class Movement : MonoBehaviour
                 ledgeClimbTimer = 0.25f;
                 moveDirection.y = ledgeBoostPower;
                 jumpBufferCounter = 0f;
-
-                if (playerCameraScript != null)
-                    playerCameraScript.SetLockPlayerRotation(false);
 
                 ReproducirAudio(fuenteSalto, clipSalto);
                 if (animator != null && Input.GetButtonDown("Jump"))
@@ -367,16 +358,11 @@ public class Movement : MonoBehaviour
 
                 if (wallForward.sqrMagnitude > 0.001f)
                     transform.rotation = Quaternion.LookRotation(wallForward);
-
-                if (playerCameraScript != null)
-                    playerCameraScript.SetLockPlayerRotation(true);
             }
         }
         else if (isWallRunning)
         {
             isWallRunning = false;
-            if (playerCameraScript != null)
-                playerCameraScript.SetLockPlayerRotation(false);
         }
 
         RaycastHit activeJumpHit = default;
@@ -389,24 +375,34 @@ public class Movement : MonoBehaviour
         isWallSliding = !isGrounded && !isHanging && !isWallRunning && moveDirection.y <= 0f
                 && isAnyWallJumpDetected && activeJumpHit.collider != lastWallCollider;
 
-        Vector3 forward = transform.TransformDirection(Vector3.forward);
-        Vector3 right = transform.TransformDirection(Vector3.right);
+        Vector3 forward;
+        Vector3 right;
+
+        if (mainCameraTransform != null)
+        {
+            forward = mainCameraTransform.forward;
+            right = mainCameraTransform.right;
+            forward.y = 0f;
+            right.y = 0f;
+            forward.Normalize();
+            right.Normalize();
+        }
+        else
+        {
+            forward = transform.forward;
+            right = transform.right;
+        }
+
         bool isRunning = Input.GetKey(KeyCode.LeftShift);
         float movementDirectionY = moveDirection.y;
 
-        #region State Execution
+        #region State Execution
 
-        if (isHanging)
+        if (isHanging)
         {
             moveDirection = Vector3.zero;
             horizontalVelocity = Vector3.zero;
             externalVelocity = Vector3.zero;
-
-            if (playerCameraScript != null)
-            {
-                playerCameraScript.SetTilt(0f);
-                playerCameraScript.SetFOV(false);
-            }
         }
         else if (isWallRunning)
         {
@@ -421,12 +417,6 @@ public class Movement : MonoBehaviour
             moveDirection.z = horizontalVelocity.z;
             moveDirection.y = -wallGravity;
             moveDirection -= wallNormal * wallStickForce;
-
-            if (playerCameraScript != null)
-            {
-                playerCameraScript.SetTilt(playerCheck.IsWallRight ? -12f : 12f);
-                playerCameraScript.SetFOV(true);
-            }
         }
         else if (isWallSliding)
         {
@@ -435,12 +425,6 @@ public class Movement : MonoBehaviour
             moveDirection.x = horizontalVelocity.x;
             moveDirection.z = horizontalVelocity.z;
             moveDirection.y = -wallSlideSpeed;
-
-            if (playerCameraScript != null)
-            {
-                playerCameraScript.SetTilt(0f);
-                playerCameraScript.SetFOV(false);
-            }
         }
         else if (ledgeClimbTimer > 0f)
         {
@@ -454,6 +438,10 @@ public class Movement : MonoBehaviour
             if (inputDirection.sqrMagnitude > 0.01f)
             {
                 inputDirection.Normalize();
+
+                Quaternion targetRotation = Quaternion.LookRotation(inputDirection);
+                transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSmoothSpeed * Time.deltaTime);
+
                 float targetSpeed = isRunning ? maxMomentumSpeed : walkSpeed;
                 horizontalVelocity = Vector3.MoveTowards(horizontalVelocity, inputDirection * targetSpeed, runAcceleration * Time.deltaTime);
 
@@ -468,13 +456,6 @@ public class Movement : MonoBehaviour
             moveDirection.x = horizontalVelocity.x;
             moveDirection.z = horizontalVelocity.z;
             moveDirection.y = movementDirectionY;
-
-            if (playerCameraScript != null)
-            {
-                playerCameraScript.SetTilt(0f);
-                bool isMovingForward = Input.GetAxisRaw("Vertical") > 0;
-                playerCameraScript.SetFOV(isRunning && isMovingForward);
-            }
         }
         else
         {
@@ -487,6 +468,10 @@ public class Movement : MonoBehaviour
             if (inputDirection.sqrMagnitude > 0.01f)
             {
                 inputDirection.Normalize();
+
+                Quaternion targetRotation = Quaternion.LookRotation(inputDirection);
+                transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, (rotationSmoothSpeed * 0.6f) * Time.deltaTime);
+
                 float targetSpeed = isRunning ? maxMomentumSpeed : walkSpeed;
                 newHorizontal = Vector3.MoveTowards(currentHorizontal, inputDirection * targetSpeed, runAcceleration * 0.5f * Time.deltaTime);
             }
@@ -501,16 +486,13 @@ public class Movement : MonoBehaviour
             moveDirection.z = newHorizontal.z;
             moveDirection.y = movementDirectionY;
             horizontalVelocity = newHorizontal;
-
-            if (playerCameraScript != null)
-                playerCameraScript.SetTilt(0f);
         }
 
-        #endregion
+        #endregion
 
-        #region Jumping
+        #region Jumping
 
-        if (!isHanging && jumpBufferCounter > 0f && canMove)
+        if (!isHanging && jumpBufferCounter > 0f && canMove)
         {
             if (isWallRunning || (wallDetected && inputForward && !isGrounded))
             {
@@ -527,9 +509,6 @@ public class Movement : MonoBehaviour
                 jumpsLeft = Mathf.Max(0, jumpsLeft - 1);
                 lastWallCollider = currentWall != null ? currentWall : activeJumpHit.collider;
                 isWallRunning = false;
-
-                if (playerCameraScript != null)
-                    playerCameraScript.SetLockPlayerRotation(false);
 
                 jumpBufferCounter = 0f;
                 ReproducirAudio(fuenteWallJump, clipWallJump);
@@ -558,11 +537,11 @@ public class Movement : MonoBehaviour
             }
         }
 
-        #endregion
+        #endregion
 
-        #region Gravity
+        #region Gravity
 
-        if (windIsLifting)
+        if (windIsLifting)
         {
             moveDirection.y = Mathf.Max(moveDirection.y, externalVelocity.y);
         }
@@ -572,11 +551,11 @@ public class Movement : MonoBehaviour
             moveDirection.y = Mathf.Max(moveDirection.y, -maxFallSpeed);
         }
 
-        #endregion
+        #endregion
 
-        #region Platform & Final Movement
+        #region Platform & Final Movement
 
-        Vector3 platformDelta = playerCheck != null ? playerCheck.GetPlatformDelta(isGrounded || isHanging) : Vector3.zero;
+        Vector3 platformDelta = playerCheck != null ? playerCheck.GetPlatformDelta(isGrounded || isHanging) : Vector3.zero;
 
         Vector3 ledgeDelta = Vector3.zero;
         if (isHanging && hangingLedgeTransform != null)
@@ -587,11 +566,11 @@ public class Movement : MonoBehaviour
 
         characterController.Move((moveDirection + externalVelocity) * Time.deltaTime + platformDelta + ledgeDelta);
 
-        #endregion
+        #endregion
 
-        #region Animations
+        #region Animations
 
-        wallRunIzquierdo = isWallRunning && playerCheck.IsWallLeft && !playerCheck.IsWallRight;
+        wallRunIzquierdo = isWallRunning && playerCheck.IsWallLeft && !playerCheck.IsWallRight;
 
         if (animator != null)
         {
@@ -605,9 +584,9 @@ public class Movement : MonoBehaviour
                 animator.SetBool("WallLeft", wallRunIzquierdo);
         }
 
-        #endregion
+        #endregion
 
-        estabaEnSuelo = isGrounded;
+        estabaEnSuelo = isGrounded;
     }
 
     private void LateUpdate()
@@ -693,9 +672,9 @@ public class Movement : MonoBehaviour
         externalVelocity = Vector3.ClampMagnitude(externalVelocity, maxExternalVelocity);
     }
 
-    #region Wall Jump
+    #region Wall Jump
 
-    private void ApplyWallJumpVelocity(Vector3 wallNormal)
+    private void ApplyWallJumpVelocity(Vector3 wallNormal)
     {
         Vector3 inheritedVelocity = Vector3.ProjectOnPlane(horizontalVelocity, wallNormal);
         horizontalVelocity = Vector3.ClampMagnitude(inheritedVelocity + wallNormal * wallJumpOutForce, maxMomentumSpeed);
@@ -704,11 +683,11 @@ public class Movement : MonoBehaviour
         moveDirection.z = horizontalVelocity.z;
     }
 
-    #endregion
+    #endregion
 
-    #region Wind API
+    #region Wind API
 
-    public void ApplyWind(plataforms source, Vector3 acceleration)
+    public void ApplyWind(plataforms source, Vector3 acceleration)
     {
         if (source != null) windSources[source] = acceleration;
     }
@@ -718,5 +697,5 @@ public class Movement : MonoBehaviour
         if (source != null) windSources.Remove(source);
     }
 
-    #endregion
+    #endregion
 }

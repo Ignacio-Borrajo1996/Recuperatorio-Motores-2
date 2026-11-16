@@ -1,10 +1,11 @@
+using Unity.Cinemachine;
 using UnityEngine;
 
 public class PlayerCamera : MonoBehaviour
 {
     #region Cam Values
-    [Header("Referencias")]
-    [SerializeField] private Camera playerCamera;
+    [Header("Referencias Cinemachine")]
+    [SerializeField] private CinemachineCamera virtualCamera;
     [SerializeField] private Transform playerBody;
 
     [Header("Sensibilidad y Límites")]
@@ -17,36 +18,20 @@ public class PlayerCamera : MonoBehaviour
     [SerializeField] private float bodyRotationSpeed = 8f;
     [SerializeField] private float angleThreshold = 60f;
 
-    [Header("Posicionamiento 3ª Persona")]
-    [SerializeField] private float pivotHeight = 1.6f;
-    [SerializeField] private float defaultDistance = 3.5f;
-    [SerializeField] private Vector2 shoulderOffset = new Vector2(0.5f, 0f);
-
     [Header("Efectos de Cámara")]
     [SerializeField] private float normalFOV = 60f;
     [SerializeField] private float runFOV = 78f;
     [SerializeField] private float fovSpeed = 8f;
     [SerializeField] private float tiltSpeed = 8f;
 
-    [Header("Colisiones de Cámara")]
-    [SerializeField] private bool enableCameraCollision = true;
-    [SerializeField] private float collisionRadius = 0.25f;
-    [SerializeField] private float collisionSmoothSpeed = 25f;
-    [SerializeField] private float returnSmoothSpeed = 8f;
-    [SerializeField] private float collisionOffset = 0.1f;
-    [SerializeField] private LayerMask collisionLayers;
-
     private float rotationX;
     private float rotationY;
     private float currentTilt;
     private float targetTilt;
     private float targetFOV;
-    private float currentDistance;
-    private float targetDistance;
     private bool isMoving;
     private bool canMove = true;
     private bool lockPlayerRotation = false;
-
     #endregion
 
     public bool CanMove
@@ -65,16 +50,13 @@ public class PlayerCamera : MonoBehaviour
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
 
-        if (playerCamera == null)
-            playerCamera = Camera.main;
-
         if (playerBody == null)
             playerBody = transform;
 
-        if (playerCamera != null)
+        if (virtualCamera != null)
         {
             targetFOV = normalFOV;
-            playerCamera.fieldOfView = normalFOV;
+            virtualCamera.Lens.FieldOfView = normalFOV;
         }
 
         if (playerBody != null)
@@ -82,18 +64,19 @@ public class PlayerCamera : MonoBehaviour
             rotationY = playerBody.eulerAngles.y;
             rotationX = playerBody.eulerAngles.x;
         }
-
-        currentDistance = defaultDistance;
-        targetDistance = defaultDistance;
     }
 
     private void Update()
     {
         currentTilt = Mathf.Lerp(currentTilt, targetTilt, Time.deltaTime * tiltSpeed);
 
-        if (playerCamera != null)
+        if (virtualCamera != null)
         {
-            playerCamera.fieldOfView = Mathf.Lerp(playerCamera.fieldOfView, targetFOV, Time.deltaTime * fovSpeed);
+            virtualCamera.Lens.FieldOfView = Mathf.Lerp(
+                virtualCamera.Lens.FieldOfView,
+                targetFOV,
+                Time.deltaTime * fovSpeed
+            );
         }
 
         float inputX = Input.GetAxisRaw("Horizontal");
@@ -103,7 +86,7 @@ public class PlayerCamera : MonoBehaviour
 
     private void LateUpdate()
     {
-        if (!canMove || playerCamera == null || playerBody == null)
+        if (!canMove || virtualCamera == null || playerBody == null)
             return;
 
         float mouseX = Input.GetAxis("Mouse X") * lookSpeed;
@@ -125,33 +108,7 @@ public class PlayerCamera : MonoBehaviour
             }
         }
 
-        Quaternion targetRotation = Quaternion.Euler(rotationX, rotationY, currentTilt);
-        Vector3 pivotPosition = playerBody.position + Vector3.up * pivotHeight;
-
-        targetDistance = defaultDistance;
-
-        if (enableCameraCollision)
-        {
-            Vector3 rayDirection = targetRotation * new Vector3(shoulderOffset.x, shoulderOffset.y, -defaultDistance);
-            float rayLength = rayDirection.magnitude;
-
-            if (Physics.SphereCast(pivotPosition, collisionRadius, rayDirection.normalized, out RaycastHit hit, rayLength, collisionLayers, QueryTriggerInteraction.Ignore))
-            {
-                if (hit.transform != playerBody && !hit.transform.IsChildOf(playerBody))
-                {
-                    targetDistance = Mathf.Clamp(hit.distance - collisionOffset, 0.2f, defaultDistance);
-                }
-            }
-        }
-
-        float smoothSpeed = targetDistance < currentDistance ? collisionSmoothSpeed : returnSmoothSpeed;
-        currentDistance = Mathf.Lerp(currentDistance, targetDistance, Time.deltaTime * smoothSpeed);
-
-        Vector3 finalOffset = new Vector3(shoulderOffset.x, shoulderOffset.y, -currentDistance);
-        Vector3 finalPosition = pivotPosition + (targetRotation * finalOffset);
-
-        playerCamera.transform.position = finalPosition;
-        playerCamera.transform.rotation = targetRotation;
+        virtualCamera.transform.rotation = Quaternion.Euler(rotationX, rotationY, currentTilt);
     }
 
     public void SetTilt(float angle)
