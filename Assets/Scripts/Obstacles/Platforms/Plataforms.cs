@@ -1,4 +1,3 @@
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -32,31 +31,76 @@ public class plataforms : MonoBehaviour
 
     #endregion
 
-    #region Ventilador (Viento)
+    #region Spikes
 
-    [Header("Parámetros del Viento")]
+    [Header("Spikes Settings")]
+    public bool CanUseSpikes = false;
+
+    [Tooltip("Objeto hijo que contiene los pinchos.")]
+    [SerializeField] private Transform spikesRoot;
+
+    [SerializeField, Min(0f)] private float spikeHeight = 1f;
+    [SerializeField, Min(0f)] private float spikeSpeed = 4f;
+
+    [Header("Intermittent Spikes")]
+    [SerializeField] private bool intermittentSpikes = false;
+
+    [SerializeField, Min(0.01f)] private float spikesOnTime = 2f;
+    [SerializeField, Min(0.01f)] private float spikesOffTime = 2f;
+
+    [SerializeField] private bool startSpikesHidden = true;
+
+    private Vector3 spikesHiddenPosition;
+    private Vector3 spikesVisiblePosition;
+
+    private bool spikesAreVisible;
+    private float spikesTimer;
+    private bool spikesInitialized;
+
+    private Collider[] spikesColliders;
+    private bool[] spikesColliderInitialStates;
+
+    private bool spikesAreDangerous;
+
+    #endregion
+
+    #region Wind
+
+    [Header("Wind Settings")]
     public bool CanUseWind = false;
-    [SerializeField] private WindDirection windDirection = WindDirection.Forward;
-    [SerializeField, Min(0f)] private float fuerza = 20f;
-    [SerializeField, Min(0.1f)] private float alcance = 5f;
-    [SerializeField, Min(0.1f)] private float ancho = 1f;
-    [SerializeField, Min(0.1f)] private float alto = 1f;
 
-    [Header("Configuración Intermitente")]
-    [SerializeField] private bool esIntermitente = false;
-    [SerializeField, Min(0.01f)] private float tiempoEncendido = 3f;
-    [SerializeField, Min(0.01f)] private float tiempoApagado = 5f;
+    [SerializeField]
+    private WindDirection windDirection =
+        WindDirection.Forward;
 
-    [Header("Efectos Visuales")]
-    [SerializeField] private ParticleSystem efectoParticulasViento;
+    [Tooltip("Fuerza aplicada por el viento.")]
+    [SerializeField, Min(0f)] private float windForce = 20f;
 
-    private BoxCollider colliderCuerpoSolido;
-    private BoxCollider areaVientoTrigger;
-    private bool estaActivo = true;
-    private Coroutine corrutinaIntermitente;
+    [Tooltip("Longitud de la zona de viento.")]
+    [SerializeField, Min(0.1f)] private float windRange = 5f;
 
-    private readonly Dictionary<Movement, HashSet<Collider>> windPlayerColliders =
-        new Dictionary<Movement, HashSet<Collider>>();
+    [Tooltip("Ancho de la zona de viento.")]
+    [SerializeField, Min(0.1f)] private float windWidth = 2f;
+
+    [Tooltip("Altura de la zona de viento.")]
+    [SerializeField, Min(0.1f)] private float windHeight = 2f;
+
+    [Header("Intermittent Wind")]
+    [SerializeField] private bool intermittentWind = false;
+
+    [SerializeField, Min(0.01f)] private float windOnTime = 3f;
+    [SerializeField, Min(0.01f)] private float windOffTime = 5f;
+
+    [Header("Wind Effects")]
+    [SerializeField] private ParticleSystem windParticles;
+
+    private BoxCollider windTrigger;
+    private bool windIsActive;
+    private float windTimer;
+
+    private readonly Dictionary<Movement, HashSet<Collider>>
+        windPlayerColliders =
+            new Dictionary<Movement, HashSet<Collider>>();
 
     #endregion
 
@@ -64,22 +108,31 @@ public class plataforms : MonoBehaviour
 
     private void Awake()
     {
-        ConfigurarEstructuraVentilador();
+        SetupSpikes();
+        SetupWind();
     }
 
     private void Start()
     {
         startPosition = transform.position;
+
         endPosition = startPosition + GetDirection() * distance;
 
-        ActualizarAlcance();
-        GestionarEstadoIntermitente();
+        windTimer = 0f;
+
+        UpdateWindCollider();
+
+        SetWindState(CanUseWind && !intermittentWind);
+
+        if (windIsActive && intermittentWind)
+            windTimer = windOnTime;
     }
 
     private void Update()
     {
         UpdateMovement();
-        GestionarEstadoIntermitente();
+        UpdateSpikes();
+        UpdateWind();
     }
 
     #endregion
@@ -94,15 +147,20 @@ public class plataforms : MonoBehaviour
             return;
 
         Vector3 previousPosition = transform.position;
+
         Vector3 target = movingToEnd ? endPosition : startPosition;
 
         transform.position = Vector3.MoveTowards(transform.position, target, speed * Time.deltaTime);
-        DeltaThisFrame = transform.position - previousPosition;
+
+        DeltaThisFrame =
+            transform.position - previousPosition;
 
         if ((transform.position - target).sqrMagnitude < 0.000001f)
         {
             transform.position = target;
+
             DeltaThisFrame = transform.position - previousPosition;
+
             movingToEnd = !movingToEnd;
         }
     }
@@ -123,7 +181,115 @@ public class plataforms : MonoBehaviour
 
     #endregion
 
-    #region Ventilador Logic
+    #region Spikes Logic
+
+    private void SetupSpikes()
+    {
+        spikesInitialized = false;
+
+        if (spikesRoot == null)
+            return;
+
+        if (spikesRoot == transform ||
+            !spikesRoot.IsChildOf(transform))
+        {
+            Debug.LogError(
+                "Spikes Root debe ser un objeto hijo de la plataforma.",
+                this
+            );
+
+            spikesRoot = null;
+            return;
+        }
+
+        spikesHiddenPosition = spikesRoot.localPosition;
+
+        spikesVisiblePosition = spikesHiddenPosition + Vector3.up * spikeHeight;
+
+        spikesAreVisible = CanUseSpikes && !startSpikesHidden;
+
+        spikesTimer = spikesAreVisible ? spikesOnTime : spikesOffTime;
+
+        spikesColliders = spikesRoot.GetComponentsInChildren<Collider>(true);
+
+        spikesColliderInitialStates = new bool[spikesColliders.Length];
+
+        for (int i = 0; i < spikesColliders.Length; i++)
+        {
+            spikesColliderInitialStates[i] = spikesColliders[i].enabled;
+
+            spikesColliders[i].enabled = false;
+        }
+
+        spikesAreDangerous = false;
+        spikesInitialized = true;
+
+        if (!spikesAreVisible)
+            spikesRoot.localPosition = spikesHiddenPosition;
+    }
+
+    private void UpdateSpikes()
+    {
+        if (!spikesInitialized || spikesRoot == null)
+            return;
+
+        if (!CanUseSpikes)
+        {
+            spikesAreVisible = false;
+            spikesTimer = 0f;
+        }
+        else if (intermittentSpikes)
+        {
+            spikesTimer -= Time.deltaTime;
+
+            if (spikesTimer <= 0f)
+            {
+                spikesAreVisible = !spikesAreVisible;
+
+                spikesTimer = spikesAreVisible ? spikesOnTime : spikesOffTime;
+            }
+        }
+        else
+        {
+            spikesAreVisible = true;
+        }
+
+        spikesVisiblePosition = spikesHiddenPosition + Vector3.up * spikeHeight;
+
+        Vector3 target = spikesAreVisible ? spikesVisiblePosition : spikesHiddenPosition;
+
+        if (!spikesAreVisible)
+            SetSpikesDangerous(false);
+
+        spikesRoot.localPosition = Vector3.MoveTowards(spikesRoot.localPosition, target, spikeSpeed * Time.deltaTime);
+
+        bool fullyExtended = (spikesRoot.localPosition - spikesVisiblePosition).sqrMagnitude < 0.0001f;
+
+        SetSpikesDangerous(CanUseSpikes && spikesAreVisible && fullyExtended);
+    }
+
+    private void SetSpikesDangerous(bool dangerous)
+    {
+        if (spikesColliders == null || spikesAreDangerous == dangerous)
+        {
+            return;
+        }
+
+        spikesAreDangerous = dangerous;
+
+        for (int i = 0; i < spikesColliders.Length; i++)
+        {
+            if (spikesColliders[i] == null)
+                continue;
+
+
+            spikesColliders[i].enabled = dangerous && spikesColliderInitialStates[i];
+        }
+    }
+
+    #endregion
+
+    #region Wind Logic
 
     private Vector3 GetWindDirectionLocal()
     {
@@ -144,279 +310,258 @@ public class plataforms : MonoBehaviour
         return transform.TransformDirection(GetWindDirectionLocal()).normalized;
     }
 
-    private void OnValidate()
+    private void SetupWind()
     {
-        distance = Mathf.Max(0f, distance);
-        speed = Mathf.Max(0f, speed);
-        alcance = Mathf.Max(0.1f, alcance);
-        ancho = Mathf.Max(0.1f, ancho);
-        alto = Mathf.Max(0.1f, alto);
-        tiempoEncendido = Mathf.Max(0.01f, tiempoEncendido);
-        tiempoApagado = Mathf.Max(0.01f, tiempoApagado);
+        Transform windArea = transform.Find("ZonaDeAire");
 
-        AjustarColliderBase();
-
-        Transform hijoArea = transform.Find("ZonaDeAire");
-        if (hijoArea != null)
+        if (windArea == null)
         {
-            areaVientoTrigger = hijoArea.GetComponent<BoxCollider>();
+            GameObject area = new GameObject("ZonaDeAire");
+
+            windArea = area.transform;
+            windArea.SetParent(transform, false);
         }
 
-        ActualizarAlcance();
-    }
+        windArea.localPosition = Vector3.zero;
+        windArea.localRotation = Quaternion.identity;
+        windArea.localScale = Vector3.one;
 
-    private void AjustarColliderBase()
-    {
-        if (colliderCuerpoSolido == null)
-            colliderCuerpoSolido = GetComponent<BoxCollider>();
+        windTrigger = windArea.GetComponent<BoxCollider>();
 
-        if (colliderCuerpoSolido != null)
+        if (windTrigger == null)
         {
-            colliderCuerpoSolido.isTrigger = false;
-            colliderCuerpoSolido.size = Vector3.one;
-            colliderCuerpoSolido.center = Vector3.zero;
-        }
-    }
-
-    private void ConfigurarEstructuraVentilador()
-    {
-        AjustarColliderBase();
-
-        Transform hijoArea = transform.Find("ZonaDeAire");
-        if (hijoArea == null)
-        {
-            GameObject objHijo = new GameObject("ZonaDeAire");
-            objHijo.transform.SetParent(transform);
-            objHijo.transform.localPosition = Vector3.zero;
-            objHijo.transform.localRotation = Quaternion.identity;
-            objHijo.transform.localScale = Vector3.one;
-            hijoArea = objHijo.transform;
+            windTrigger = windArea.gameObject.AddComponent<BoxCollider>();
         }
 
-        areaVientoTrigger = hijoArea.GetComponent<BoxCollider>();
-        if (areaVientoTrigger == null)
-        {
-            areaVientoTrigger = hijoArea.gameObject.AddComponent<BoxCollider>();
-        }
+        windTrigger.isTrigger = true;
+        windTrigger.enabled = false;
 
-        areaVientoTrigger.isTrigger = true;
+        WindZoneDetect detector = windArea.GetComponent<WindZoneDetect>();
 
-        ZonaVientoDetector detector = hijoArea.GetComponent<ZonaVientoDetector>();
         if (detector == null)
         {
-            detector = hijoArea.gameObject.AddComponent<ZonaVientoDetector>();
+            detector = windArea.gameObject.AddComponent<WindZoneDetect>();
         }
-        detector.Inicializar(this);
+
+        detector.Initialize(this);
+
+        UpdateWindCollider();
     }
 
-    private void GestionarEstadoIntermitente()
+    private void UpdateWindCollider()
+    {
+        if (windTrigger == null)
+            return;
+
+        float width = Mathf.Max(0.1f, windWidth);
+        float height = Mathf.Max(0.1f, windHeight);
+        float range = Mathf.Max(0.1f, windRange);
+
+        Vector3 dir = GetWindDirectionLocal();
+
+        if (dir == Vector3.forward)
+        {
+            windTrigger.center =
+                new Vector3(0f, 0f, range / 2f);
+
+            windTrigger.size =
+                new Vector3(width, height, range);
+        }
+        else if (dir == Vector3.back)
+        {
+            windTrigger.center =
+                new Vector3(0f, 0f, -range / 2f);
+
+            windTrigger.size =
+                new Vector3(width, height, range);
+        }
+        else if (dir == Vector3.right)
+        {
+            windTrigger.center =
+                new Vector3(range / 2f, 0f, 0f);
+
+            windTrigger.size =
+                new Vector3(range, height, width);
+        }
+        else if (dir == Vector3.left)
+        {
+            windTrigger.center =
+                new Vector3(-range / 2f, 0f, 0f);
+
+            windTrigger.size =
+                new Vector3(range, height, width);
+        }
+        else if (dir == Vector3.up)
+        {
+            windTrigger.center =
+                new Vector3(0f, range / 2f, 0f);
+
+            windTrigger.size =
+                new Vector3(width, range, height);
+        }
+        else
+        {
+            windTrigger.center =
+                new Vector3(0f, -range / 2f, 0f);
+
+            windTrigger.size =
+                new Vector3(width, range, height);
+        }
+    }
+    private void UpdateWind()
     {
         if (!CanUseWind)
         {
-            if (corrutinaIntermitente != null)
-            {
-                StopCoroutine(corrutinaIntermitente);
-                corrutinaIntermitente = null;
-            }
-            CambiarEstado(false);
+            SetWindState(false);
+            windTimer = 0f;
             return;
         }
 
-        if (esIntermitente && corrutinaIntermitente == null)
+        if (!intermittentWind)
         {
-            corrutinaIntermitente = StartCoroutine(RutinaIntermitente());
-        }
-        else if (!esIntermitente && corrutinaIntermitente != null)
-        {
-            StopCoroutine(corrutinaIntermitente);
-            corrutinaIntermitente = null;
-            CambiarEstado(true);
-        }
-    }
-
-    private void ActualizarAlcance()
-    {
-        Vector3 dir = GetWindDirectionLocal();
-
-        if (areaVientoTrigger != null)
-        {
-            if (dir == Vector3.forward)
-            {
-                areaVientoTrigger.center = new Vector3(0f, 0f, alcance / 2f);
-                areaVientoTrigger.size = new Vector3(ancho, alto, alcance);
-            }
-            else if (dir == Vector3.back)
-            {
-                areaVientoTrigger.center = new Vector3(0f, 0f, -alcance / 2f);
-                areaVientoTrigger.size = new Vector3(ancho, alto, alcance);
-            }
-            else if (dir == Vector3.right)
-            {
-                areaVientoTrigger.center = new Vector3(alcance / 2f, 0f, 0f);
-                areaVientoTrigger.size = new Vector3(alcance, alto, ancho);
-            }
-            else if (dir == Vector3.left)
-            {
-                areaVientoTrigger.center = new Vector3(-alcance / 2f, 0f, 0f);
-                areaVientoTrigger.size = new Vector3(alcance, alto, ancho);
-            }
-            else if (dir == Vector3.up)
-            {
-                areaVientoTrigger.center = new Vector3(0f, alcance / 2f, 0f);
-                areaVientoTrigger.size = new Vector3(ancho, alcance, alto);
-            }
-            else
-            {
-                areaVientoTrigger.center = new Vector3(0f, -alcance / 2f, 0f);
-                areaVientoTrigger.size = new Vector3(ancho, alcance, alto);
-            }
+            SetWindState(true);
+            return;
         }
 
-        if (efectoParticulasViento != null)
+        windTimer -= Time.deltaTime;
+
+        if (windTimer <= 0f)
         {
-            efectoParticulasViento.transform.localPosition = Vector3.zero;
-            efectoParticulasViento.transform.localRotation = Quaternion.LookRotation(dir);
+            bool nextState = !windIsActive;
+
+            SetWindState(nextState);
+
+            windTimer = nextState ? windOnTime : windOffTime;
         }
     }
 
-    private IEnumerator RutinaIntermitente()
+    private void SetWindState(bool active)
     {
-        while (esIntermitente && CanUseWind)
-        {
-            CambiarEstado(true);
-            yield return new WaitForSeconds(tiempoEncendido);
+        bool shouldBeActive = CanUseWind && active;
 
-            CambiarEstado(false);
-            yield return new WaitForSeconds(tiempoApagado);
-        }
-    }
-
-    private void CambiarEstado(bool activo)
-    {
-        bool estadoFinal = CanUseWind && activo;
-
-        if (estaActivo == estadoFinal && areaVientoTrigger != null && areaVientoTrigger.enabled == estadoFinal)
+        if (windIsActive == shouldBeActive)
             return;
 
-        estaActivo = estadoFinal;
+        windIsActive = shouldBeActive;
 
-        if (areaVientoTrigger != null)
-        {
-            areaVientoTrigger.enabled = estaActivo;
-        }
+        if (windTrigger != null)
+            windTrigger.enabled = windIsActive;
 
-        if (efectoParticulasViento != null)
+        if (windParticles != null)
         {
-            if (estaActivo)
+            if (windIsActive)
             {
-                if (!efectoParticulasViento.isPlaying)
-                    efectoParticulasViento.Play();
+                if (!windParticles.isPlaying)
+                    windParticles.Play();
             }
-            else
+            else if (windParticles.isPlaying)
             {
-                if (efectoParticulasViento.isPlaying)
-                    efectoParticulasViento.Stop();
+                windParticles.Stop();
             }
         }
 
-        if (!estaActivo)
+        if (!windIsActive)
         {
-            foreach (Movement jugador in windPlayerColliders.Keys)
+            foreach (Movement player in windPlayerColliders.Keys)
             {
-                if (jugador != null)
-                    jugador.StopWind(this);
+                if (player != null)
+                    player.StopWind(this);
             }
+
             windPlayerColliders.Clear();
         }
     }
 
-    public void ProcesarEmpuje(Collider other)
+    public void ProcessWind(Collider other)
     {
-        if (!CanUseWind || !estaActivo || other == null)
+        if (!CanUseWind || !windIsActive || other == null)
             return;
 
-        Vector3 direccionAire = GetWindDirectionWorld();
+        Movement player = other.GetComponentInParent<Movement>();
 
-        Movement jugador = other.GetComponentInParent<Movement>();
-        if (jugador != null)
-        {
-            if (!windPlayerColliders.TryGetValue(jugador, out HashSet<Collider> colliders))
-            {
-                colliders = new HashSet<Collider>();
-                windPlayerColliders.Add(jugador, colliders);
-            }
-            colliders.Add(other);
-
-            jugador.ApplyWind(this, direccionAire * fuerza);
+        if (player == null)
             return;
+
+        if (!windPlayerColliders.TryGetValue(
+            player,
+            out HashSet<Collider> colliders))
+        {
+            colliders = new HashSet<Collider>();
+
+            windPlayerColliders.Add(player, colliders);
         }
 
-        Rigidbody rb = other.GetComponent<Rigidbody>();
-        if (rb != null && !rb.isKinematic)
-        {
-            rb.AddForce(direccionAire * fuerza, ForceMode.Acceleration);
-        }
+        colliders.Add(other);
+
+        player.ApplyWind(this, GetWindDirectionWorld() * windForce);
     }
 
-    public void SalirDelViento(Collider other)
+    public void ExitWind(Collider other)
     {
         if (other == null)
             return;
 
-        Movement jugador = other.GetComponentInParent<Movement>();
-        if (jugador == null)
+        Movement player = other.GetComponentInParent<Movement>();
+
+        if (player == null)
             return;
 
-        if (!windPlayerColliders.TryGetValue(jugador, out HashSet<Collider> colliders))
+        if (!windPlayerColliders.TryGetValue(
+            player,
+            out HashSet<Collider> colliders))
+        {
             return;
+        }
 
         colliders.Remove(other);
 
         if (colliders.Count == 0)
         {
-            windPlayerColliders.Remove(jugador);
-            jugador.StopWind(this);
+            windPlayerColliders.Remove(player);
+            player.StopWind(this);
         }
+    }
+
+    #endregion
+
+    #region Validation
+
+    private void OnValidate()
+    {
+        distance = Mathf.Max(0f, distance);
+        speed = Mathf.Max(0f, speed);
+        spikeHeight = Mathf.Max(0f, spikeHeight);
+        spikeSpeed = Mathf.Max(0f, spikeSpeed);
+
+        windWidth = Mathf.Max(0.1f, windWidth);
+        windHeight = Mathf.Max(0.1f, windHeight);
+        windRange = Mathf.Max(0.1f, windRange);
+
+        spikesOnTime = Mathf.Max(0.01f, spikesOnTime);
+        spikesOffTime = Mathf.Max(0.01f, spikesOffTime);
+
+        windOnTime = Mathf.Max(0.01f, windOnTime);
+        windOffTime = Mathf.Max(0.01f, windOffTime);
+
+        if (!Application.isPlaying && windTrigger != null)
+            UpdateWindCollider();
     }
 
     #endregion
 
     #region Gizmos
 
-    private void OnDrawGizmos()
+    private void OnDrawGizmosSelected()
     {
         if (!CanUseWind)
             return;
 
-        Gizmos.color = estaActivo ? Color.cyan : Color.gray;
-        Gizmos.DrawRay(transform.position, GetWindDirectionWorld() * alcance);
+        Gizmos.color = Color.cyan;
+
+        Vector3 directionWorld = transform.TransformDirection(GetWindDirectionLocal()).normalized;
+
+        Gizmos.DrawRay(transform.position, directionWorld * windRange);
     }
 
     #endregion
-}
-
-public class ZonaVientoDetector : MonoBehaviour
-{
-    private plataforms ventiladorPadre;
-
-    public void Inicializar(plataforms padre)
-    {
-        ventiladorPadre = padre;
-    }
-
-    private void OnTriggerStay(Collider other)
-    {
-        if (ventiladorPadre != null)
-        {
-            ventiladorPadre.ProcesarEmpuje(other);
-        }
-    }
-
-    private void OnTriggerExit(Collider other)
-    {
-        if (ventiladorPadre != null)
-        {
-            ventiladorPadre.SalirDelViento(other);
-        }
-    }
 }

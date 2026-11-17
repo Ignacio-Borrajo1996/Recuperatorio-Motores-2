@@ -73,14 +73,19 @@ public class ControladorVidas : MonoBehaviour
                 fuenteAudio.PlayOneShot(clipSonidoGameOver);
             }
 
+            if (UIManager.Instance != null)
+            {
+                UIManager.Instance.TriggerLose();
+            }
+            else if (panelGameOver != null)
+            {
+                panelGameOver.SetActive(true);
+            }
+
             vidasActuales = vidasIniciales;
             ultimoCheckpoint = null;
             contandoTiempo = false;
 
-            if (panelGameOver != null)
-            {
-                panelGameOver.SetActive(true);
-            }
             Transform destinoFinal = spawnPointInicial != null ? spawnPointInicial : transform;
             TeletransportarJugador(jugador, destinoFinal);
             ActualizarUI();
@@ -133,6 +138,11 @@ public class ControladorVidas : MonoBehaviour
 
     private void ActualizarUI()
     {
+        if (UIManager.Instance != null)
+        {
+            UIManager.Instance.UpdateLivesUI(vidasActuales);
+        }
+
         if (textoVidas != null)
         {
             textoVidas.text = "Vidas: " + vidasActuales;

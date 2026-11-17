@@ -30,6 +30,7 @@ public class WindZoneDetect : MonoBehaviour
 
     private void OnTriggerStay(Collider other)
     {
+        // Actualiza la fuerza si el jugador sigue dentro.
         RegisterWind(other);
     }
 
@@ -51,6 +52,7 @@ public class WindZoneDetect : MonoBehaviour
 
     private void OnDisable()
     {
+        // Evita mantener referencias si la zona se desactiva.
         if (windSource == null)
             return;
 

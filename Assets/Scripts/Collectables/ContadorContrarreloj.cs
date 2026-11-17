@@ -5,8 +5,8 @@ public class ContadorContrarreloj : MonoBehaviour
 {
     public static ContadorContrarreloj Instancia { get; private set; }
 
-    [Header("Configuración del Tiempo")]
-    [Tooltip("Minutos para el desafío (editable desde Unity)")]
+    [Header("ConfiguraciÃ³n del Tiempo")]
+    [Tooltip("Minutos para el desafÃ­o (editable desde Unity)")]
     [SerializeField] private float minutosIniciales = 2f;
 
     [Header("Referencias UI")]
@@ -29,6 +29,7 @@ public class ContadorContrarreloj : MonoBehaviour
     private bool voz50Reproducida = false;
     private bool voz20Reproducida = false;
     private bool RelojReproducido = false;
+
     private void Awake()
     {
         Instancia = this;
@@ -110,6 +111,12 @@ public class ContadorContrarreloj : MonoBehaviour
         if (juegoTerminado) return;
 
         coleccionablesActuales++;
+
+        if (UIManager.Instance != null)
+        {
+            UIManager.Instance.UpdateCollectiblesUI(coleccionablesActuales);
+        }
+
         if (coleccionablesActuales >= COLECCIONABLES_REQUERIDOS)
         {
             GanarJuego();
@@ -118,10 +125,17 @@ public class ContadorContrarreloj : MonoBehaviour
 
     private void ActualizarRelojUI()
     {
-        if (textoTiempo == null) return;
-        int minutos = Mathf.FloorToInt(tiempoRestante / 60);
-        int segundos = Mathf.FloorToInt(tiempoRestante % 60);
-        textoTiempo.text = string.Format("{0:00}:{1:00}", minutos, segundos);
+        if (UIManager.Instance != null)
+        {
+            UIManager.Instance.UpdateTimeUI(tiempoRestante);
+        }
+
+        if (textoTiempo != null)
+        {
+            int minutos = Mathf.FloorToInt(tiempoRestante / 60);
+            int segundos = Mathf.FloorToInt(tiempoRestante % 60);
+            textoTiempo.text = string.Format("{0:00}:{1:00}", minutos, segundos);
+        }
     }
 
     private void GanarJuego()
@@ -133,6 +147,13 @@ public class ContadorContrarreloj : MonoBehaviour
     private void PerderPorTiempo()
     {
         juegoTerminado = true;
-        if (panelPerdiste != null) panelPerdiste.SetActive(true);
+        if (UIManager.Instance != null)
+        {
+            UIManager.Instance.TriggerLose();
+        }
+        else if (panelPerdiste != null)
+        {
+            panelPerdiste.SetActive(true);
+        }
     }
 }
