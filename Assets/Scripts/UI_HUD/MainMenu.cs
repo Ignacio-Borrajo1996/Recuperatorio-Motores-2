@@ -6,6 +6,7 @@ public class Menuinicial : MonoBehaviour
 {
     [Header("Scene Settings")]
     public string gameplaySceneName = "Nivel1";
+    public string secretSceneName = "NivelSecreto";
 
     [Header("Audio Settings")]
     public AudioSource clickAudioSource;
@@ -15,12 +16,25 @@ public class Menuinicial : MonoBehaviour
     public GameObject levelsPanel;
     public GameObject controlsPanel;
 
+    [Header("Secret Level UI")]
+    public GameObject secretLevelButton;
+
+    private void Start()
+    {
+        int unlockedState = PlayerPrefs.GetInt("SecretLevelUnlocked", 0);
+        Debug.Log("SecretLevelUnlocked value: " + unlockedState);
+
+        if (secretLevelButton != null)
+        {
+            secretLevelButton.SetActive(unlockedState == 1);
+        }
+    }
+
     public void PlayGame()
     {
         if (clickAudioSource != null)
         {
             clickAudioSource.Play();
-             
             Invoke("LoadGameplayScene", 0.30f);
         }
         else
@@ -32,6 +46,24 @@ public class Menuinicial : MonoBehaviour
     private void LoadGameplayScene()
     {
         SceneManager.LoadScene(gameplaySceneName);
+    }
+
+    public void PlaySecretLevel()
+    {
+        if (clickAudioSource != null)
+        {
+            clickAudioSource.Play();
+            Invoke("LoadSecretScene", 0.30f);
+        }
+        else
+        {
+            LoadSecretScene();
+        }
+    }
+
+    private void LoadSecretScene()
+    {
+        SceneManager.LoadScene(secretSceneName);
     }
 
     public void ExitGame()
