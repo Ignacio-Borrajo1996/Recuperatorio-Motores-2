@@ -379,6 +379,9 @@ public class plataforms : MonoBehaviour
         }
     }
 
+    public void ProcessWind(Collider other) => ProcesarEmpuje(other);
+    public void ExitWind(Collider other) => SalirDelViento(other);
+
     #endregion
 
     #region Gizmos
