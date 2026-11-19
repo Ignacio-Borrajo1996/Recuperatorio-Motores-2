@@ -57724,6 +57724,10 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 9100000, guid: ea108fe706542494fb28f9511b884284, type: 2}
     - target: {fileID: 5866666021909216657, guid: bc8929624aca5f84b95f96924237d9ea, type: 3}
+      propertyPath: m_AnimatePhysics
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 5866666021909216657, guid: bc8929624aca5f84b95f96924237d9ea, type: 3}
       propertyPath: m_ApplyRootMotion
       value: 0
       objectReference: {fileID: 0}

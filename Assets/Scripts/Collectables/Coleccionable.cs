@@ -25,6 +25,8 @@ public class Coleccionable : MonoBehaviour
     [SerializeField] private AudioClip clipVoz7;
     [SerializeField] private AudioClip clipVoz8;
 
+    private bool yaRecogido = false;
+
     private void Update()
     {
         if (rotar)
@@ -35,8 +37,12 @@ public class Coleccionable : MonoBehaviour
 
     private void OnTriggerEnter(Collider other)
     {
+        if (yaRecogido) return;
+
         if (other.CompareTag("Player"))
         {
+            yaRecogido = true;
+
             if (esMeta)
             {
                 ReproducirClipSeguro(clipSonidoVictoria);
@@ -74,30 +80,30 @@ public class Coleccionable : MonoBehaviour
     {
         if (clip == null) return;
 
-        if (fuenteAudioExterna != null)
+        if (fuenteAudioExterna != null && fuenteAudioExterna.gameObject != this.gameObject)
         {
             if (grupoAudioMixer != null)
             {
                 fuenteAudioExterna.outputAudioMixerGroup = grupoAudioMixer;
             }
             fuenteAudioExterna.PlayOneShot(clip);
+            return;
         }
-        else if (ControladorVidas.Instancia != null)
+
+        GameObject audioTemp = new GameObject("SFX_Coleccionable_" + clip.name);
+        DontDestroyOnLoad(audioTemp);
+
+        AudioSource sourceTemp = audioTemp.AddComponent<AudioSource>();
+        sourceTemp.clip = clip;
+        sourceTemp.spatialBlend = 0f;
+
+        if (grupoAudioMixer != null)
         {
-            AudioSource audioControlador = ControladorVidas.Instancia.GetComponent<AudioSource>();
-            if (audioControlador != null)
-            {
-                if (grupoAudioMixer != null)
-                {
-                    audioControlador.outputAudioMixerGroup = grupoAudioMixer;
-                }
-                audioControlador.PlayOneShot(clip);
-            }
+            sourceTemp.outputAudioMixerGroup = grupoAudioMixer;
         }
-        else
-        {
-            AudioSource.PlayClipAtPoint(clip, transform.position);
-        }
+
+        sourceTemp.Play();
+        Destroy(audioTemp, clip.length + 0.1f);
     }
 
     private void TeletransportarJugador(GameObject jugador)

@@ -7,12 +7,14 @@ public class WinScreen : MonoBehaviour
     {
         PlayerPrefs.SetInt("SecretLevelUnlocked", 1);
         PlayerPrefs.Save();
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
     }
 
     public void PlayAgain()
     {
         Scene escenaActual = SceneManager.GetActiveScene();
-        SceneManager.LoadScene(escenaActual.name);
+        SceneManager.LoadScene("Tutorial");
     }
 
     public void NextLevel()
